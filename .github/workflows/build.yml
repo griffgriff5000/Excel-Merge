@@ -1,10 +1,13 @@
 name: Build Windows EXE
 
 on:
-  workflow_dispatch:        # run manually
+  workflow_dispatch:
   push:
     tags:
-      - 'v*'                # run on tags like v1.0.0
+      - 'v*'                 # runs on tags like v1.0.4
+
+permissions:
+  contents: write            # <-- needed to create/update Releases
 
 jobs:
   build:
@@ -53,8 +56,10 @@ jobs:
           name: ExcelMergeGUI
           path: dist/ExcelMergeGUI.exe
 
-      - name: Create GitHub Release
+      - name: Create/Update GitHub Release (attach EXE)
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with:
           files: dist/ExcelMergeGUI.exe
+          generate_release_notes: true
+          token: ${{ secrets.GITHUB_TOKEN }}   # explicit
