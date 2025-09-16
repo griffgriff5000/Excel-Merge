@@ -1,27 +1,60 @@
 name: Build Windows EXE
 
 on:
+  workflow_dispatch:        # run manually
   push:
     tags:
-      - 'v*'          # builds when you push a tag like v1.0.0
-  workflow_dispatch:   # lets you run it manually
+      - 'v*'                # run on tags like v1.0.0
 
 jobs:
-  build-windows:
+  build:
     runs-on: windows-latest
 
     steps:
-      - name: Check out
+      - name: Checkout
         uses: actions/checkout@v4
 
-      # Auto-find your script (ExcelMerge.py or ExcelMergeGUI.py) anywhere in the repo
-      - name: Locate script
+      - name: Locate script (ExcelMerge*.py)
         shell: pwsh
         run: |
           $file = Get-ChildItem -Recurse -File -Include ExcelMerge*.py | Select-Object -First 1
           if (-not $file) {
-            Write-Host "No Exc
+            Write-Host "No ExcelMerge*.py found. Listing .py files:"
+            Get-ChildItem -Recurse -File -Include *.py | ForEach-Object { $_.FullName }
+            throw "Script not found"
+          }
+          "SCRIPT_PATH=$($file.FullName)" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
+          Write-Host "Using script: $($file.FullName)"
 
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        shell: pwsh
+        run: |
+          python -m pip install --upgrade pip
+          $req = Get-ChildItem -Recurse -File -Filter requirements.txt | Select-Object -First 1
+          if ($req) {
+            pip install -r "$($req.FullName)" pyinstaller
+          } else {
+            pip install pandas openpyxl pyinstaller
+          }
+
+      - name: Build EXE
+        shell: pwsh
+        run: |
+          pyinstaller --onefile --noconsole --hidden-import openpyxl --name ExcelMergeGUI "$env:SCRIPT_PATH"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ExcelMergeGUI
+          path: dist/ExcelMergeGUI.exe
+
+      - name: Create GitHub Release
+        if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with:
           files: dist/ExcelMergeGUI.exe
