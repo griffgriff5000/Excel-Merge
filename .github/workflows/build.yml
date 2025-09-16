@@ -1,0 +1,50 @@
+name: Build Windows EXE
+
+on:
+  push:
+    tags: ['v*']         # build when you push a tag like v1.0.0
+  workflow_dispatch:      # allow manual runs too
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    env:
+      # CHANGE THIS if your .py file has a different name or location.
+      SCRIPT_PATH: "Merge the Tab/ExcelMergeGUI.py"
+
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+
+      - name: Show files (debug)
+        run: |
+          echo "Listing files so we can verify the path:"
+          dir -Recurse
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt pyinstaller
+
+      - name: Build EXE with PyInstaller
+        run: |
+          pyinstaller --onefile --noconsole --hidden-import openpyxl --name ExcelMergeGUI "$env:SCRIPT_PATH"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ExcelMergeGUI
+          path: dist/ExcelMergeGUI.exe
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        if: startsWith(github.ref, 'refs/tags/')
+        with:
+          files: dist/ExcelMergeGUI.exe
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
