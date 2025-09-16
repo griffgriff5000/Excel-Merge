@@ -2,17 +2,24 @@ name: Build Windows EXE
 
 on:
   push:
-    tags:
-      - 'v*'               # Build when you push a tag like v1.0.0
-  workflow_dispatch:        # Also allow manual runs from the Actions tab
+    tags: ['v*']         # build when you push a tag like v1.0.0
+  workflow_dispatch:      # allow manual runs too
 
 jobs:
   build-windows:
     runs-on: windows-latest
+    env:
+      # CHANGE THIS if your .py file has a different name or location.
+      SCRIPT_PATH: "Merge the Tab/ExcelMergeGUI.py"
 
     steps:
-      - name: Check out repository
+      - name: Check out
         uses: actions/checkout@v4
+
+      - name: Show files (debug)
+        run: |
+          echo "Listing files so we can verify the path:"
+          dir -Recurse
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -24,20 +31,16 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt pyinstaller
 
-      # If you ever see missing-module errors at runtime,
-      # add --hidden-import MODULE (e.g. --hidden-import openpyxl)
       - name: Build EXE with PyInstaller
         run: |
-          pyinstaller --onefile --noconsole --name ExcelMergeGUI ExcelMergeGUI.py
+          pyinstaller --onefile --noconsole --hidden-import openpyxl --name ExcelMergeGUI "$env:SCRIPT_PATH"
 
-      # Artifact = shows up on the workflow run page
-      - name: Upload build artifact
+      - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: ExcelMergeGUI
           path: dist/ExcelMergeGUI.exe
 
-      # If this run was triggered by a tag (v1.0.0 etc.), attach the EXE to a Release
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         if: startsWith(github.ref, 'refs/tags/')
