@@ -1,0 +1,73 @@
+name: Build Windows EXE
+
+on:
+  push:
+    tags: ['v*']           # build on tags like v1.0.0
+  workflow_dispatch:        # allow manual runs
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+
+      # Find your script automatically (works if it's "ExcelMerge.py" or "ExcelMergeGUI.py"
+      # and even if it's inside "Merge the Tab")
+      - name: Locate script
+        shell: pwsh
+        run: |
+          $candidates = @('ExcelMergeGUI.py','ExcelMerge.py')
+          $file = Get-ChildItem -Recurse -File | Where-Object { $candidates -contains $_.Name } | Select-Object -First 1
+          if (-not $file) {
+            Write-Host "Could not find ExcelMerge*.py. Here are all .py files:" -ForegroundColor Yellow
+            Get-ChildItem -Recurse -File -Include *.py | ForEach-Object { $_.FullName }
+            throw "No ExcelMerge*.py script found."
+          }
+          "SCRIPT_PATH=$($file.FullName)" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
+          Write-Host "Using script: $($file.FullName)"
+
+      # Find requirements.txt (or create a temp one if not found)
+      - name: Locate requirements.txt
+        shell: pwsh
+        run: |
+          $req = Get-ChildItem -Recurse -File -Filter requirements.txt | Select-Object -First 1
+          if ($req) {
+            "REQUIREMENTS_PATH=$($req.FullName)" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
+            Write-Host "Using requirements: $($req.FullName)"
+          } else {
+            Write-Host "No requirements.txt found; creating a temporary one."
+            @"
+pandas
+openpyxl
+"@ | Out-File requirements.temp.txt -Encoding utf8
+            "REQUIREMENTS_PATH=$pwd\requirements.temp.txt" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
+          }
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r "$env:REQUIREMENTS_PATH" pyinstaller
+
+      - name: Build EXE
+        shell: pwsh
+        run: |
+          pyinstaller --onefile --noconsole --hidden-import openpyxl --name ExcelMergeGUI "$env:SCRIPT_PATH"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ExcelMergeGUI
+          path: dist/ExcelMergeGUI.exe
+
+      - name: Create GitHub Release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/ExcelMergeGUI.exe
