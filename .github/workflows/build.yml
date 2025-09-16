@@ -1,23 +1,22 @@
 name: Build Windows EXE
 
 on:
-  workflow_dispatch:          # allow manual runs
+  workflow_dispatch:
   push:
     tags:
-      - 'v*'                  # run on tags like v1.0.6
+      - 'v*'                  # e.g. v1.0.6
 
 permissions:
-  contents: write             # needed to create/update Releases
+  contents: write             # allow release upload
 
 jobs:
   build:
     runs-on: windows-latest
-
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      # Find your script anywhere in the repo (ExcelMerge.py or ExcelMergeGUI.py)
+      # Auto-find your script (ExcelMerge.py OR ExcelMergeGUI.py) anywhere in the repo
       - name: Locate script
         shell: pwsh
         run: |
@@ -27,25 +26,8 @@ jobs:
             Get-ChildItem -Recurse -File -Include *.py | ForEach-Object { $_.FullName }
             throw "Script not found"
           }
-          "SCRIPT_PATH=$($file.FullName)" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
+          "SCRIPT_PATH=$($file.FullName)" | Out-File $env:GITHUB_ENV -Append
           Write-Host "Using script: $($file.FullName)"
-
-      # Use requirements.txt if present; else create a temp one
-      - name: Locate requirements
-        shell: pwsh
-        run: |
-          $req = Get-ChildItem -Recurse -File -Filter requirements.txt | Select-Object -First 1
-          if ($req) {
-            "REQUIREMENTS_PATH=$($req.FullName)" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
-            Write-Host "Using requirements: $($req.FullName)"
-          } else {
-            Write-Host "No requirements.txt found; creating temporary one."
-@'
-pandas
-openpyxl
-'@ | Out-File requirements.temp.txt -Encoding utf8
-            "REQUIREMENTS_PATH=$pwd\requirements.temp.txt" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
-          }
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -53,28 +35,31 @@ openpyxl
           python-version: '3.11'
 
       - name: Install dependencies
+        shell: pwsh
         run: |
           python -m pip install --upgrade pip
-          pip install -r "$env:REQUIREMENTS_PATH" pyinstaller
+          $req = Get-ChildItem -Recurse -File -Filter requirements.txt | Select-Object -First 1
+          if ($req) {
+            pip install -r "$($req.FullName)" pyinstaller
+          } else {
+            pip install pandas openpyxl pyinstaller
+          }
 
-      - name: Build EXE with PyInstaller
+      - name: Build EXE
         shell: pwsh
         run: |
           pyinstaller --onefile --noconsole --hidden-import openpyxl --name ExcelMergeGUI "$env:SCRIPT_PATH"
 
-      - name: Upload artifact (always available on the run page)
+      - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: ExcelMergeGUI
           path: dist/ExcelMergeGUI.exe
 
-      # When triggered by a tag, create/update a (mutable) release and attach the EXE
-      - name: Create/Update GitHub Release (attach EXE)
+      - name: Create/Update GitHub Release
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with:
           files: dist/ExcelMergeGUI.exe
           generate_release_notes: true
-          make_latest: false         # keep release mutable (not marked "latest/immutable")
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          make_latest: false
